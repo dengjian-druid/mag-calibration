@@ -1,4 +1,5 @@
 import sys
+import argparse
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
@@ -84,40 +85,116 @@ def calibrate(s, F=500.):
 
 def main():
     """使用SVD算法椭球拟合示例"""
-    if len(sys.argv) < 2:
-        print("用法: python ellipsoid_fit_svd.py <地磁数据.csv>")
-        sys.exit(1)
-
-    df = pd.read_csv(sys.argv[1])[100:-100]
+    parser = argparse.ArgumentParser(description='磁力计椭球拟合校准程序 (SVD算法)')
+    parser.add_argument('-f', '--file', default='../data/1d000006ab_mag_20250218.csv', 
+                       help='CSV文件路径 (默认: ../data/1d000006ab_mag_20250218.csv)')
+    parser.add_argument('-n', '--train_samples', type=int, default=200,
+                       help='训练样本数量 (默认: 200)')
+    parser.add_argument('-t', '--target_field', type=float, default=500.0,
+                       help='目标磁场强度 (默认: 500.0)')
+    
+    args = parser.parse_args()
+    
+    print("=== Python磁力计校准程序 (SVD算法) ===")
+    print(f"CSV文件: {args.file}")
+    print(f"训练样本数量: {args.train_samples}")
+    print(f"目标磁场强度: {args.target_field}")
+    
+    # 读取数据
+    df = pd.read_csv(args.file)[100:-100]
     data = df[['X', 'Y', 'Z']].values
-    train, test = train_test_split(data, test_size=0.5, random_state=42)
-
-    print(f"数据点数量: {len(train)}")
-
+    total_samples = len(data)
+    
+    print(f"从 {args.file} 读取了 {total_samples} 个样本")
+    
+    # 验证训练样本数量
+    if args.train_samples > total_samples:
+        print(f"错误: 训练样本数量 ({args.train_samples}) 超过总样本数量 ({total_samples})")
+        sys.exit(1)
+    
+    # 随机打乱数据
+    np.random.seed(42)
+    indices = np.random.permutation(total_samples)
+    shuffled_data = data[indices]
+    
+    # 分离训练集和测试集
+    train = shuffled_data[:args.train_samples]
+    test = shuffled_data[args.train_samples:]
+    
+    print(f"训练集样本数量: {len(train)}")
+    print(f"测试集样本数量: {len(test)}")
+    
+    print(f"\n=== 训练集数据统计 ===")
+    print(f"样本数量: {len(train)}")
+    print(f"均值: [{train.mean(axis=0)[0]:.1f}, {train.mean(axis=0)[1]:.1f}, {train.mean(axis=0)[2]:.1f}]")
+    print(f"范围: X[{train[:,0].min():.1f}, {train[:,0].max():.1f}], Y[{train[:,1].min():.1f}, {train[:,1].max():.1f}], Z[{train[:,2].min():.1f}, {train[:,2].max():.1f}]")
+    
+    # 计算原始数据平均半径
+    original_radius = la.norm(train, axis=1)
+    print(f"原始数据平均半径: {original_radius.mean():.1f}")
+    
+    print(f"\n=== 开始椭球拟合校准 ===")
+    
     # 使用校准API
-    S, h = calibrate(train, F=500.0)
-    print(S, h)
-    print(data.shape)
-
-    # 输出校准参数的C代码格式
-    print("\n校准参数 (C代码格式):")
-    print("float S[3][3] = {")
-    for row in S:
-        print("    { " + ", ".join(f"{v:.8f}" for v in row) + " },")
-    print("};")
-    print("float h[3] = { " + ", ".join(f"{v:.8f}" for v in h) + " };")
-
-    # 校准数据
-    calibrated = (test - h) @ S
-
-    # 计算校准效果
-    radius = la.norm(calibrated, axis=1)
-    print(f"\n校准效果:")
-    print(f"校准后半径: 均值={radius.mean():.3f}, 标准差={radius.std():.3f}")
-    print(f"椭球中心: [{h[0]:.6f}, {h[1]:.6f}, {h[2]:.6f}]")
-
-    # 可视化结果
-    create_calibration_plot(data, calibrated, "SVD Algorithm", 'svd_calibration_result.png')
+    S, h = calibrate(train, F=args.target_field)
+    
+    print(f"\n=== 校准参数 ===")
+    print(f"偏移向量 h: [{h[0]:.3f}, {h[1]:.3f}, {h[2]:.3f}]")
+    print(f"缩放矩阵 S:")
+    for i, row in enumerate(S):
+        print(f"  [{row[0]:.6f}, {row[1]:.6f}, {row[2]:.6f}]")
+    
+    # 注释掉C代码格式输出
+    # print("\n校准参数 (C代码格式):")
+    # print("float S[3][3] = {")
+    # for row in S:
+    #     print("    { " + ", ".join(f"{v:.8f}" for v in row) + " },")
+    # print("};")
+    # print("float h[3] = { " + ", ".join(f"{v:.8f}" for v in h) + " };")
+    
+    # 计算训练集校准效果
+    train_calibrated = (train - h) @ S
+    train_radius = la.norm(train_calibrated, axis=1)
+    
+    print("\n=== 训练集校准效果 ===")
+    print("\n=== 校准效果统计 ===")
+    print(f"平均半径: {train_radius.mean():.3f}")
+    print(f"标准差: {train_radius.std():.3f}")
+    print(f"最小半径: {train_radius.min():.3f}")
+    print(f"最大半径: {train_radius.max():.3f}")
+    cv = (train_radius.std() / train_radius.mean()) * 100
+    print(f"变异系数: {cv:.2f}%")
+    print(f"期望半径: {args.target_field}")
+    abs_error = abs(train_radius.mean() - args.target_field)
+    rel_error = (abs_error / args.target_field) * 100
+    print(f"绝对误差: {abs_error:.3f}")
+    print(f"相对误差: {rel_error:.2f}%")
+    
+    # 计算测试集校准效果
+    if len(test) > 0:
+        test_calibrated = (test - h) @ S
+        test_radius = la.norm(test_calibrated, axis=1)
+        
+        print("\n=== 测试集校准效果 ===")
+        print("\n=== 校准效果统计 ===")
+        print(f"平均半径: {test_radius.mean():.3f}")
+        print(f"标准差: {test_radius.std():.3f}")
+        print(f"最小半径: {test_radius.min():.3f}")
+        print(f"最大半径: {test_radius.max():.3f}")
+        cv_test = (test_radius.std() / test_radius.mean()) * 100
+        print(f"变异系数: {cv_test:.2f}%")
+        print(f"期望半径: {args.target_field}")
+        abs_error_test = abs(test_radius.mean() - args.target_field)
+        rel_error_test = (abs_error_test / args.target_field) * 100
+        print(f"绝对误差: {abs_error_test:.3f}")
+        print(f"相对误差: {rel_error_test:.2f}%")
+        
+        # 可视化结果
+        create_calibration_plot(data, test_calibrated, "SVD Algorithm", 'svd_calibration_result.png')
+    else:
+        print("\n注意: 没有测试集数据")
+        # 可视化训练集结果
+        create_calibration_plot(data, train_calibrated, "SVD Algorithm", 'svd_calibration_result.png')
 
 if __name__ == "__main__":
     main()
