@@ -433,12 +433,13 @@ void print_usage(const char *program_name) {
     printf("  -f <文件>     CSV文件路径 (默认: ../data/1d000006ab_mag_20250218.csv)\n");
     printf("  -n <数量>     训练样本数量 (默认: 200)\n");
     printf("  -t <强度>     目标磁场强度 (默认: 500.0)\n");
+    printf("  -s <数量>     丢弃前后样本数量 (默认: 100)\n");
     printf("  -h            显示此帮助信息\n");
     printf("\n说明:\n");
-    printf("  程序将从CSV文件中随机选择指定数量的样本作为训练集，\n");
-    printf("  剩余的所有样本作为测试集进行校准效果验证。\n");
+    printf("  程序将从CSV文件中丢弃前后指定数量的样本，然后从剩余样本中\n");
+    printf("  随机选择指定数量的样本作为训练集，剩余的所有样本作为测试集。\n");
     printf("\n示例:\n");
-    printf("  %s -f ../data/test.csv -n 300 -t 450.0\n", program_name);
+    printf("  %s -f ../data/test.csv -n 300 -t 450.0 -s 50\n", program_name);
 }
 
 int main(int argc, char *argv[]) {
@@ -446,6 +447,7 @@ int main(int argc, char *argv[]) {
     const char *csv_file = "../data/1d000006ab_mag_20250218.csv";
     int train_count = 200;  // 训练样本数量
     float target_field = 500.0f;
+    int skip_samples = 100; // 丢弃前后样本数量
     
     // 解析命令行参数
     for (int i = 1; i < argc; i++) {
@@ -455,6 +457,8 @@ int main(int argc, char *argv[]) {
             train_count = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             target_field = atof(argv[++i]);
+        } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
+            skip_samples = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -469,6 +473,7 @@ int main(int argc, char *argv[]) {
     printf("CSV文件: %s\n", csv_file);
     printf("训练样本数量: %d\n", train_count);
     printf("目标磁场强度: %.1f\n", target_field);
+    printf("丢弃前后样本数量: %d\n", skip_samples);
     
     // 验证参数
     if (train_count < MIN_SAMPLES_FOR_CALIBRATION) {
@@ -496,15 +501,46 @@ int main(int argc, char *argv[]) {
     
     printf("从 %s 读取了 %d 个样本\n", csv_file, total_samples);
     
-    if (total_samples < train_count) {
-        printf("错误：文件中的样本数量 (%d) 少于请求的训练样本数量 (%d)\n", 
-               total_samples, train_count);
+    // 验证丢弃样本数量的合理性
+    if (skip_samples < 0) {
+        printf("错误：丢弃样本数量不能为负数\n");
         free(all_samples);
         return 1;
     }
     
+    if (skip_samples * 2 >= total_samples) {
+        printf("错误：丢弃样本数量过多，前后各丢弃 %d 个样本会超过总样本数 %d\n", 
+               skip_samples, total_samples);
+        free(all_samples);
+        return 1;
+    }
+    
+    // 丢弃前后指定数量的样本
+    int effective_samples = total_samples - 2 * skip_samples;
+    mag_sample_t *filtered_samples = malloc(effective_samples * sizeof(mag_sample_t));
+    if (!filtered_samples) {
+        printf("内存分配失败\n");
+        free(all_samples);
+        return 1;
+    }
+    
+    // 复制中间的有效样本
+    for (int i = 0; i < effective_samples; i++) {
+        filtered_samples[i] = all_samples[skip_samples + i];
+    }
+    
+    printf("丢弃前后各 %d 个样本，剩余有效样本: %d\n", skip_samples, effective_samples);
+    
+    if (effective_samples < train_count) {
+        printf("错误：有效样本数量 (%d) 少于请求的训练样本数量 (%d)\n", 
+               effective_samples, train_count);
+        free(all_samples);
+        free(filtered_samples);
+        return 1;
+    }
+    
     // 计算测试集数量
-    int test_count = total_samples - train_count;
+    int test_count = effective_samples - train_count;
     
     float *train_samples = malloc(train_count * 3 * sizeof(float));
     float *test_samples = malloc(test_count * 3 * sizeof(float));
@@ -512,36 +548,38 @@ int main(int argc, char *argv[]) {
     if (!train_samples || !test_samples) {
         printf("内存分配失败\n");
         free(all_samples);
+        free(filtered_samples);
         free(train_samples);
         free(test_samples);
         return 1;
     }
     
-    // 随机打乱所有样本
+    // 随机打乱有效样本
     srand(time(NULL));
-    for (int i = total_samples - 1; i > 0; i--) {
+    for (int i = effective_samples - 1; i > 0; i--) {
         int j = rand() % (i + 1);
-        mag_sample_t temp = all_samples[i];
-        all_samples[i] = all_samples[j];
-        all_samples[j] = temp;
+        mag_sample_t temp = filtered_samples[i];
+        filtered_samples[i] = filtered_samples[j];
+        filtered_samples[j] = temp;
     }
     
     // 前train_count个作为训练集
     for (int i = 0; i < train_count; i++) {
-        train_samples[i*3 + 0] = all_samples[i].x;
-        train_samples[i*3 + 1] = all_samples[i].y;
-        train_samples[i*3 + 2] = all_samples[i].z;
+        train_samples[i*3 + 0] = filtered_samples[i].x;
+        train_samples[i*3 + 1] = filtered_samples[i].y;
+        train_samples[i*3 + 2] = filtered_samples[i].z;
     }
     
     // 剩余的作为测试集
     for (int i = 0; i < test_count; i++) {
         int idx = train_count + i;
-        test_samples[i*3 + 0] = all_samples[idx].x;
-        test_samples[i*3 + 1] = all_samples[idx].y;
-        test_samples[i*3 + 2] = all_samples[idx].z;
+        test_samples[i*3 + 0] = filtered_samples[idx].x;
+        test_samples[i*3 + 1] = filtered_samples[idx].y;
+        test_samples[i*3 + 2] = filtered_samples[idx].z;
     }
     
     free(all_samples);
+    free(filtered_samples);
     
     printf("训练集样本数量: %d\n", train_count);
     printf("测试集样本数量: %d\n", test_count);
