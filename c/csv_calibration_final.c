@@ -431,9 +431,12 @@ void print_usage(const char *program_name) {
     printf("用法: %s [选项]\n", program_name);
     printf("选项:\n");
     printf("  -f <文件>     CSV文件路径 (默认: ../data/1d000006ab_mag_20250218.csv)\n");
-    printf("  -n <数量>     采样数量 (默认: 200)\n");
+    printf("  -n <数量>     训练样本数量 (默认: 200)\n");
     printf("  -t <强度>     目标磁场强度 (默认: 500.0)\n");
     printf("  -h            显示此帮助信息\n");
+    printf("\n说明:\n");
+    printf("  程序将从CSV文件中随机选择指定数量的样本作为训练集，\n");
+    printf("  剩余的所有样本作为测试集进行校准效果验证。\n");
     printf("\n示例:\n");
     printf("  %s -f ../data/test.csv -n 300 -t 450.0\n", program_name);
 }
@@ -441,7 +444,7 @@ void print_usage(const char *program_name) {
 int main(int argc, char *argv[]) {
     // 默认参数
     const char *csv_file = "../data/1d000006ab_mag_20250218.csv";
-    int sample_count = 200;
+    int train_count = 200;  // 训练样本数量
     float target_field = 500.0f;
     
     // 解析命令行参数
@@ -449,7 +452,7 @@ int main(int argc, char *argv[]) {
         if (strcmp(argv[i], "-f") == 0 && i + 1 < argc) {
             csv_file = argv[++i];
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            sample_count = atoi(argv[++i]);
+            train_count = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             target_field = atof(argv[++i]);
         } else if (strcmp(argv[i], "-h") == 0) {
@@ -464,17 +467,17 @@ int main(int argc, char *argv[]) {
     
     printf("=== CSV磁力计校准程序 ===\n");
     printf("CSV文件: %s\n", csv_file);
-    printf("采样数量: %d\n", sample_count);
+    printf("训练样本数量: %d\n", train_count);
     printf("目标磁场强度: %.1f\n", target_field);
     
     // 验证参数
-    if (sample_count < MIN_SAMPLES_FOR_CALIBRATION) {
-        printf("错误：采样数量太少，至少需要 %d 个样本\n", MIN_SAMPLES_FOR_CALIBRATION);
+    if (train_count < MIN_SAMPLES_FOR_CALIBRATION) {
+        printf("错误：训练样本数量太少，至少需要 %d 个样本\n", MIN_SAMPLES_FOR_CALIBRATION);
         return 1;
     }
     
-    if (sample_count > MAX_SAMPLES) {
-        printf("错误：采样数量太多，最多支持 %d 个样本\n", MAX_SAMPLES);
+    if (train_count > MAX_SAMPLES) {
+        printf("错误：训练样本数量太多，最多支持 %d 个样本\n", MAX_SAMPLES);
         return 1;
     }
     
@@ -493,33 +496,68 @@ int main(int argc, char *argv[]) {
     
     printf("从 %s 读取了 %d 个样本\n", csv_file, total_samples);
     
-    if (total_samples < sample_count) {
-        printf("警告：文件中的样本数量 (%d) 少于请求的采样数量 (%d)，使用所有可用样本\n", 
-               total_samples, sample_count);
-        sample_count = total_samples;
-    }
-    
-    // 随机采样
-    float *samples = malloc(sample_count * 3 * sizeof(float));
-    if (!samples) {
-        printf("内存分配失败\n");
+    if (total_samples < train_count) {
+        printf("错误：文件中的样本数量 (%d) 少于请求的训练样本数量 (%d)\n", 
+               total_samples, train_count);
         free(all_samples);
         return 1;
     }
     
-    random_sample(all_samples, total_samples, samples, sample_count);
+    // 计算测试集数量
+    int test_count = total_samples - train_count;
+    
+    float *train_samples = malloc(train_count * 3 * sizeof(float));
+    float *test_samples = malloc(test_count * 3 * sizeof(float));
+    
+    if (!train_samples || !test_samples) {
+        printf("内存分配失败\n");
+        free(all_samples);
+        free(train_samples);
+        free(test_samples);
+        return 1;
+    }
+    
+    // 随机打乱所有样本
+    srand(time(NULL));
+    for (int i = total_samples - 1; i > 0; i--) {
+        int j = rand() % (i + 1);
+        mag_sample_t temp = all_samples[i];
+        all_samples[i] = all_samples[j];
+        all_samples[j] = temp;
+    }
+    
+    // 前train_count个作为训练集
+    for (int i = 0; i < train_count; i++) {
+        train_samples[i*3 + 0] = all_samples[i].x;
+        train_samples[i*3 + 1] = all_samples[i].y;
+        train_samples[i*3 + 2] = all_samples[i].z;
+    }
+    
+    // 剩余的作为测试集
+    for (int i = 0; i < test_count; i++) {
+        int idx = train_count + i;
+        test_samples[i*3 + 0] = all_samples[idx].x;
+        test_samples[i*3 + 1] = all_samples[idx].y;
+        test_samples[i*3 + 2] = all_samples[idx].z;
+    }
+    
     free(all_samples);
     
-    // 计算数据统计
-    calculate_data_statistics(samples, sample_count);
+    printf("训练集样本数量: %d\n", train_count);
+    printf("测试集样本数量: %d\n", test_count);
     
-    // 执行校准
+    // 计算训练集数据统计
+    printf("\n=== 训练集数据统计 ===\n");
+    calculate_data_statistics(train_samples, train_count);
+    
+    // 执行校准（使用训练集）
     printf("\n=== 开始椭球拟合校准 ===\n");
     calibration_params_t calibration;
     
-    if (magnetometer_calibrate_csv(samples, sample_count, target_field, &calibration) != 0) {
+    if (magnetometer_calibrate_csv(train_samples, train_count, target_field, &calibration) != 0) {
         printf("校准失败！\n");
-        free(samples);
+        free(train_samples);
+        free(test_samples);
         return 1;
     }
     
@@ -529,8 +567,13 @@ int main(int argc, char *argv[]) {
     printf("缩放因子: [%.3f, %.3f, %.3f]\n", 
            calibration.S[0], calibration.S[4], calibration.S[8]);
     
-    // 计算校准效果
-    calculate_calibration_stats(samples, sample_count, &calibration, target_field);
+    // 计算训练集校准效果
+    printf("\n=== 训练集校准效果 ===\n");
+    calculate_calibration_stats(train_samples, train_count, &calibration, target_field);
+    
+    // 计算测试集校准效果
+    printf("\n=== 测试集校准效果 ===\n");
+    calculate_calibration_stats(test_samples, test_count, &calibration, target_field);
     
     // 输出C代码格式的校准参数
     printf("\n=== C代码格式校准参数 ===\n");
@@ -544,6 +587,7 @@ int main(int argc, char *argv[]) {
     printf("    calibrated[2] = (raw[2] - %.3ff) * %.3ff;\n", calibration.h[2], calibration.S[8]);
     printf("}\n");
     
-    free(samples);
+    free(train_samples);
+    free(test_samples);
     return 0;
 }
