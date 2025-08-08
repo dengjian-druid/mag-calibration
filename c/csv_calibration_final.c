@@ -374,6 +374,8 @@ void calculate_calibration_stats(const float *samples, int num_samples,
     float *radii = malloc(num_samples * sizeof(float));
     float sum = 0, sum_sq = 0;
     float min_radius = INFINITY, max_radius = 0;
+    float re_sum = 0;  // 残差误差累计
+    float rmse_sum = 0;  // RMSE累计
     
     for (int i = 0; i < num_samples; i++) {
         float calibrated[3];
@@ -388,12 +390,24 @@ void calculate_calibration_stats(const float *samples, int num_samples,
         
         if (radius < min_radius) min_radius = radius;
         if (radius > max_radius) max_radius = radius;
+        
+        // 计算RE（残差误差）：校准后数据点到理想球面的距离
+        float residual_error = fabsf(radius - target_field);
+        re_sum += residual_error;
+        
+        // 计算RMSE（均方根误差）：预测值与真实值差值的平方
+        float squared_error = (radius - target_field) * (radius - target_field);
+        rmse_sum += squared_error;
     }
     
     float mean = sum / num_samples;
     float variance = (sum_sq / num_samples) - (mean * mean);
     float std_dev = sqrtf(variance);
     float cv = (std_dev / mean) * 100.0f;
+    
+    // 计算RE和RMSE的最终值
+    float re = re_sum / num_samples;  // 平均残差误差
+    float rmse = sqrtf(rmse_sum / num_samples);  // 均方根误差
     
     printf("\n=== 校准效果统计 ===\n");
     printf("平均半径: %.3f\n", mean);
@@ -404,6 +418,9 @@ void calculate_calibration_stats(const float *samples, int num_samples,
     printf("期望半径: %.1f\n", target_field);
     printf("绝对误差: %.3f\n", fabsf(mean - target_field));
     printf("相对误差: %.2f%%\n", fabsf(mean - target_field) / target_field * 100.0f);
+    printf("\n=== 新增评价指标 ===\n");
+    printf("RE (残差误差): %.3f\n", re);
+    printf("RMSE (均方根误差): %.3f\n", rmse);
     
     free(radii);
 }

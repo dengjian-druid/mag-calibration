@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from scipy import linalg as la
-from plot_utils import create_calibration_plot
+from plot_utils import create_calibration_plot, create_re_visualization
 from sklearn.model_selection import train_test_split
 
 def ellipsoid_fit_svd(s):
@@ -177,6 +177,13 @@ def main():
     print(f"绝对误差: {abs_error:.3f}")
     print(f"相对误差: {rel_error:.2f}%")
     
+    # 计算RE和RMSE
+    residual_errors = np.abs(train_radius - args.target_field)
+    mean_re = residual_errors.mean()
+    rmse = np.sqrt(((train_radius - args.target_field) ** 2).mean())
+    print(f"平均残差误差(RE): {mean_re:.3f}")
+    print(f"均方根误差(RMSE): {rmse:.3f}")
+    
     # 计算测试集校准效果
     if len(test) > 0:
         test_calibrated = (test - h) @ S
@@ -196,12 +203,29 @@ def main():
         print(f"绝对误差: {abs_error_test:.3f}")
         print(f"相对误差: {rel_error_test:.2f}%")
         
+        # 计算RE和RMSE
+        residual_errors_test = np.abs(test_radius - args.target_field)
+        mean_re_test = residual_errors_test.mean()
+        rmse_test = np.sqrt(((test_radius - args.target_field) ** 2).mean())
+        print(f"平均残差误差(RE): {mean_re_test:.3f}")
+        print(f"均方根误差(RMSE): {rmse_test:.3f}")
+        
         # 可视化结果
         create_calibration_plot(data, test_calibrated, "SVD Algorithm", 'svd_calibration_result.png')
+        
+        # 创建RE可视化 - 测试集
+        print("\n=== 生成测试集RE可视化分析 ===")
+        re_stats_test = create_re_visualization(test_calibrated, args.target_field, 
+                                               "SVD Algorithm (Test Set)", 
+                                               'svd_test_re_analysis.png')
+        
+        # 创建RE可视化 - 训练集
+        # print("\n=== 生成训练集RE可视化分析 ===")
+        # re_stats_train = create_re_visualization(train_calibrated, args.target_field, 
+        #                                         "SVD Algorithm (Train Set)", 
+        #                                         'svd_train_re_analysis.png')
     else:
         print("\n注意: 没有测试集数据")
-        # 可视化训练集结果
-        create_calibration_plot(data, train_calibrated, "SVD Algorithm", 'svd_calibration_result.png')
 
 if __name__ == "__main__":
     main()
