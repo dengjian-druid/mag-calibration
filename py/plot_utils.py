@@ -140,50 +140,50 @@ def create_re_visualization(calibrated_data, target_field, algorithm_name, save_
     }
 
 def calculate_attitude_coverage(data, grid_size=12):
-    """Calculate attitude coverage metrics
+    """计算姿态覆盖度量指标
     
     Parameters:
-        data: Raw magnetometer data (N x 3)
-        grid_size: Spherical grid size (default 12x12)
+        data: 原始磁力计数据 (N x 3)
+        grid_size: 球面网格大小 (默认12x12)
     
     Returns:
-        dict: Dictionary containing various coverage metrics
+        dict: 包含各种覆盖指标的字典
     """
-    # Normalize data to unit sphere
+    # 数据归一化到单位球面
     norms = np.linalg.norm(data, axis=1)
     normalized_data = data / norms[:, np.newaxis]
     
-    # 1. Spherical coverage calculation
-    # Convert to spherical coordinates (theta: 0 to pi, phi: 0 to 2pi)
-    theta = np.arccos(np.clip(normalized_data[:, 2], -1, 1))  # Polar angle
-    phi = np.arctan2(normalized_data[:, 1], normalized_data[:, 0]) + np.pi  # Azimuth angle, convert to [0, 2pi]
+    # 1. 球面覆盖度计算
+    # 转换为球面坐标 (theta: 0到pi, phi: 0到2pi)
+    theta = np.arccos(np.clip(normalized_data[:, 2], -1, 1))  # 极角
+    phi = np.arctan2(normalized_data[:, 1], normalized_data[:, 0]) + np.pi  # 方位角，转换到[0, 2pi]
     
-    # Create spherical grid
+    # 创建球面网格
     theta_bins = np.linspace(0, np.pi, grid_size + 1)
     phi_bins = np.linspace(0, 2 * np.pi, grid_size + 1)
     
-    # Count data points in each grid
+    # 统计每个网格的数据点数量
     hist, _, _ = np.histogram2d(theta, phi, bins=[theta_bins, phi_bins])
     covered_grids = np.sum(hist > 0)
     total_grids = grid_size * grid_size
     spherical_coverage = covered_grids / total_grids
     
-    # 2. Key attitude coverage detection (hexahedron)
+    # 2. 关键姿态覆盖检测 (六面体)
     key_directions = np.array([
         [1, 0, 0], [-1, 0, 0],   # ±X
         [0, 1, 0], [0, -1, 0],   # ±Y
         [0, 0, 1], [0, 0, -1]    # ±Z
     ])
     
-    coverage_threshold = np.cos(np.pi / 6)  # 30 degree threshold
+    coverage_threshold = np.cos(np.pi / 6)  # 30度阈值
     covered_faces = 0
     face_coverage_details = []
     
     for i, direction in enumerate(key_directions):
-        # Calculate cosine of angle with key direction
+        # 计算与关键方向的夹角余弦值
         dot_products = np.dot(normalized_data, direction)
         close_points = np.sum(dot_products > coverage_threshold)
-        is_covered = close_points >= 10  # At least 10 points
+        is_covered = close_points >= 10  # 至少10个点
         
         if is_covered:
             covered_faces += 1
@@ -197,10 +197,10 @@ def calculate_attitude_coverage(data, grid_size=12):
     
     key_attitude_coverage = covered_faces / 6
     
-    # 3. Maximum gap angle calculation
-    # Use simplified method: uniformly sample points on sphere, find sampling point farthest from nearest data point
+    # 3. 最大空隙角度计算
+    # 使用简化方法：在球面上均匀采样点，找到距离最近数据点最远的采样点
     n_sample = 1000
-    # Generate uniformly distributed spherical sampling points
+    # 生成均匀分布的球面采样点
     u = np.random.uniform(0, 1, n_sample)
     v = np.random.uniform(0, 1, n_sample)
     sample_theta = np.arccos(2 * u - 1)
@@ -214,7 +214,7 @@ def calculate_attitude_coverage(data, grid_size=12):
     
     max_gap_angle = 0
     for sample_point in sample_points:
-        # Calculate angular distance to all data points
+        # 计算到所有数据点的角距离
         dot_products = np.dot(normalized_data, sample_point)
         dot_products = np.clip(dot_products, -1, 1)
         min_angle = np.min(np.arccos(dot_products))
@@ -233,24 +233,24 @@ def calculate_attitude_coverage(data, grid_size=12):
     }
 
 def print_attitude_coverage_report(coverage_metrics, dataset_name="Dataset"):
-    """Print attitude coverage report
+    """打印姿态覆盖报告
     
     Parameters:
-        coverage_metrics: Metrics dictionary returned by calculate_attitude_coverage
-        dataset_name: Dataset name
+        coverage_metrics: calculate_attitude_coverage返回的指标字典
+        dataset_name: 数据集名称
     """
-    print(f"\n=== {dataset_name} Attitude Coverage Analysis ===")
-    print(f"Total data points: {coverage_metrics['total_points']}")
-    print(f"Spherical coverage: {coverage_metrics['spherical_coverage']:.1%} ({coverage_metrics['grid_size']}x{coverage_metrics['grid_size']} grid)")
-    print(f"Key attitude coverage: {coverage_metrics['covered_faces']}/6 faces ({coverage_metrics['key_attitude_coverage']:.1%})")
-    print(f"Maximum gap angle: {coverage_metrics['max_gap_angle_deg']:.1f}°")
+    print(f"\n=== {dataset_name} 姿态覆盖分析 ===")
+    print(f"数据点总数: {coverage_metrics['total_points']}")
+    print(f"球面覆盖率: {coverage_metrics['spherical_coverage']:.1%} ({coverage_metrics['grid_size']}x{coverage_metrics['grid_size']} 网格)")
+    print(f"关键姿态覆盖: {coverage_metrics['covered_faces']}/6 面 ({coverage_metrics['key_attitude_coverage']:.1%})")
+    print(f"最大空隙角度: {coverage_metrics['max_gap_angle_deg']:.1f}°")
     
-    print("\nHexahedron coverage details:")
+    print("\n六面体覆盖详情:")
     for face_info in coverage_metrics['face_coverage_details']:
         status = "✓" if face_info['covered'] else "✗"
-        print(f"  {face_info['face']}: {status} ({face_info['point_count']} points)")
+        print(f"  {face_info['face']}: {status} ({face_info['point_count']} 点)")
     
-    # Calibration readiness assessment
+    # 校准完成判断
     calibration_ready = (
         coverage_metrics['spherical_coverage'] >= 0.75 and
         coverage_metrics['covered_faces'] >= 5 and
@@ -258,36 +258,36 @@ def print_attitude_coverage_report(coverage_metrics, dataset_name="Dataset"):
         coverage_metrics['total_points'] >= 200
     )
     
-    print(f"\nCalibration readiness: {'✓ Ready for calibration' if calibration_ready else '✗ Need more data'}")
+    print(f"\n校准完成判断: {'✓ 可以开始校准' if calibration_ready else '✗ 需要更多数据'}")
     if not calibration_ready:
-        print("Recommendations:")
+        print("建议:")
         if coverage_metrics['spherical_coverage'] < 0.75:
-            print(f"  - Insufficient spherical coverage ({coverage_metrics['spherical_coverage']:.1%} < 75%)")
+            print(f"  - 球面覆盖率不足 ({coverage_metrics['spherical_coverage']:.1%} < 75%)")
         if coverage_metrics['covered_faces'] < 5:
-            print(f"  - Insufficient key attitude coverage ({coverage_metrics['covered_faces']}/6 < 5/6)")
+            print(f"  - 关键姿态覆盖不足 ({coverage_metrics['covered_faces']}/6 < 5/6)")
         if coverage_metrics['max_gap_angle_deg'] > 75:
-            print(f"  - Large gap regions exist ({coverage_metrics['max_gap_angle_deg']:.1f}° > 75°)")
+            print(f"  - 存在较大空隙区域 ({coverage_metrics['max_gap_angle_deg']:.1f}° > 75°)")
         if coverage_metrics['total_points'] < 200:
-            print(f"  - Insufficient data points ({coverage_metrics['total_points']} < 200)")
+            print(f"  - 数据点数量不足 ({coverage_metrics['total_points']} < 200)")
     
     return calibration_ready
 
 def calculate_three_axis_coverage(data, axis_threshold_deg=30, min_points_per_direction=10):
-    """Calculate three-axis coverage metrics
+    """计算三主轴选择覆盖指标
     
     Parameters:
-        data: numpy array, magnetometer data with shape (n, 3)
-        axis_threshold_deg: Axis threshold angle (degrees), default 30 degrees
-        min_points_per_direction: Minimum points required per direction
+        data: numpy数组，形状为(n, 3)的磁力计数据
+        axis_threshold_deg: 轴向阈值角度（度），默认30度
+        min_points_per_direction: 每个方向的最小点数要求
         
     Returns:
-        dict: Dictionary containing three-axis coverage metrics
+        dict: 包含三主轴覆盖指标的字典
     """
-    # Normalize data to unit sphere
+    # 数据归一化到单位球面
     norms = np.linalg.norm(data, axis=1)
     normalized_data = data / norms[:, np.newaxis]
     
-    # Define positive and negative directions of three main axes
+    # 定义三主轴的正负方向
     axis_directions = {
         'X+': np.array([1, 0, 0]),
         'X-': np.array([-1, 0, 0]),
@@ -299,18 +299,18 @@ def calculate_three_axis_coverage(data, axis_threshold_deg=30, min_points_per_di
     
     axis_threshold_cos = np.cos(np.radians(axis_threshold_deg))
     
-    # Calculate coverage for each axis direction
+    # 计算每个轴向的覆盖情况
     axis_coverage = {}
     total_axis_points = 0
     
     for axis_name, direction in axis_directions.items():
-        # Calculate cosine of angle with axis direction
+        # 计算与轴向的夹角余弦值
         dot_products = np.dot(normalized_data, direction)
-        # Find points within threshold range
+        # 找到在阈值范围内的点
         axis_points = np.sum(dot_products > axis_threshold_cos)
         is_covered = axis_points >= min_points_per_direction
         
-        # Calculate angular distribution of axis data
+        # 计算轴向数据的角度分布
         if axis_points > 0:
             axis_angles = np.arccos(np.clip(dot_products[dot_products > axis_threshold_cos], -1, 1))
             avg_angle = np.degrees(np.mean(axis_angles))
@@ -329,11 +329,11 @@ def calculate_three_axis_coverage(data, axis_threshold_deg=30, min_points_per_di
         if is_covered:
             total_axis_points += axis_points
     
-    # Calculate axis coverage statistics
+    # 计算轴向覆盖统计
     covered_directions = sum(1 for info in axis_coverage.values() if info['covered'])
     axis_coverage_ratio = covered_directions / 6
     
-    # Calculate bilateral coverage for each axis (X, Y, Z)
+    # 计算每个轴（X、Y、Z）的双向覆盖情况
     axes_bilateral_coverage = {}
     for axis in ['X', 'Y', 'Z']:
         pos_covered = axis_coverage[f'{axis}+']['covered']
@@ -351,20 +351,20 @@ def calculate_three_axis_coverage(data, axis_threshold_deg=30, min_points_per_di
     bilateral_axes_count = sum(1 for info in axes_bilateral_coverage.values() if info['bilateral_covered'])
     bilateral_coverage_ratio = bilateral_axes_count / 3
     
-    # Calculate axis data distribution uniformity
+    # 计算轴向数据分布均匀性
     axis_point_counts = [info['point_count'] for info in axis_coverage.values() if info['covered']]
     if len(axis_point_counts) > 1:
         axis_uniformity = 1 - (np.std(axis_point_counts) / np.mean(axis_point_counts))
-        axis_uniformity = max(0, axis_uniformity)  # Ensure non-negative
+        axis_uniformity = max(0, axis_uniformity)  # 确保非负
     else:
         axis_uniformity = 0
     
-    # Calculate main axis selection quality score
-    # Based on bilateral coverage, data distribution uniformity and total points
+    # 计算主轴选择质量评分
+    # 基于双向覆盖、数据分布均匀性和总点数
     quality_score = (
-        bilateral_coverage_ratio * 0.5 +  # Bilateral coverage weight 50%
-        axis_uniformity * 0.3 +           # Uniformity weight 30%
-        min(total_axis_points / (6 * min_points_per_direction), 1) * 0.2  # Data sufficiency weight 20%
+        bilateral_coverage_ratio * 0.5 +  # 双向覆盖权重50%
+        axis_uniformity * 0.3 +           # 均匀性权重30%
+        min(total_axis_points / (6 * min_points_per_direction), 1) * 0.2  # 数据充足性权重20%
     )
     
     return {
@@ -382,74 +382,74 @@ def calculate_three_axis_coverage(data, axis_threshold_deg=30, min_points_per_di
     }
 
 def print_three_axis_coverage_report(axis_metrics, dataset_name="Dataset"):
-    """Print three-axis coverage report
+    """打印三主轴覆盖报告
     
     Parameters:
-        axis_metrics: Metrics dictionary returned by calculate_three_axis_coverage
-        dataset_name: Dataset name
+        axis_metrics: calculate_three_axis_coverage返回的指标字典
+        dataset_name: 数据集名称
     """
-    print(f"\n=== {dataset_name} Three-Axis Coverage Analysis ===")
-    print(f"Axis threshold: {axis_metrics['axis_threshold_deg']}°")
-    print(f"Minimum points requirement: {axis_metrics['min_points_per_direction']} points/direction")
-    print(f"Axis coverage: {axis_metrics['covered_directions']}/6 directions ({axis_metrics['axis_coverage_ratio']:.1%})")
-    print(f"Bilateral coverage: {axis_metrics['bilateral_axes_count']}/3 axes ({axis_metrics['bilateral_coverage_ratio']:.1%})")
-    print(f"Data uniformity: {axis_metrics['axis_uniformity']:.3f}")
-    print(f"Quality score: {axis_metrics['quality_score']:.3f}")
+    print(f"\n=== {dataset_name} 三主轴覆盖分析 ===")
+    print(f"轴向阈值: {axis_metrics['axis_threshold_deg']}°")
+    print(f"最小点数要求: {axis_metrics['min_points_per_direction']} 点/方向")
+    print(f"轴向覆盖: {axis_metrics['covered_directions']}/6 方向 ({axis_metrics['axis_coverage_ratio']:.1%})")
+    print(f"双向覆盖: {axis_metrics['bilateral_axes_count']}/3 轴 ({axis_metrics['bilateral_coverage_ratio']:.1%})")
+    print(f"数据均匀性: {axis_metrics['axis_uniformity']:.3f}")
+    print(f"质量评分: {axis_metrics['quality_score']:.3f}")
     
-    print("\nAxis coverage details:")
+    print("\n各轴向覆盖详情:")
     for axis_name, info in axis_metrics['axis_coverage'].items():
         status = "✓" if info['covered'] else "✗"
-        print(f"  {axis_name}: {status} ({info['point_count']} points, avg angle: {info['avg_angle_deg']:.1f}°)")
+        print(f"  {axis_name}: {status} ({info['point_count']} 点, 平均角度: {info['avg_angle_deg']:.1f}°)")
     
-    print("\nBilateral coverage details:")
+    print("\n双向覆盖详情:")
     for axis, info in axis_metrics['axes_bilateral_coverage'].items():
         pos_status = "✓" if info['positive_covered'] else "✗"
         neg_status = "✓" if info['negative_covered'] else "✗"
         bilateral_status = "✓" if info['bilateral_covered'] else "✗"
-        print(f"  {axis} axis: {bilateral_status} (positive{pos_status}:{info['positive_points']}pts, negative{neg_status}:{info['negative_points']}pts)")
+        print(f"  {axis}轴: {bilateral_status} (正向{pos_status}:{info['positive_points']}点, 负向{neg_status}:{info['negative_points']}点)")
     
-    # Three-axis calibration recommendations
+    # 三主轴校准建议
     axis_calibration_ready = (
-        axis_metrics['bilateral_coverage_ratio'] >= 0.67 and  # At least 2/3 axes bilateral coverage
-        axis_metrics['quality_score'] >= 0.6 and              # Quality score ≥ 0.6
-        axis_metrics['total_axis_points'] >= 60               # Total axis points ≥ 60
+        axis_metrics['bilateral_coverage_ratio'] >= 0.67 and  # 至少2/3轴双向覆盖
+        axis_metrics['quality_score'] >= 0.6 and              # 质量评分≥0.6
+        axis_metrics['total_axis_points'] >= 60               # 轴向总点数≥60
     )
     
-    print(f"\nThree-axis calibration assessment: {'✓ Sufficient axis coverage' if axis_calibration_ready else '✗ Insufficient axis coverage'}")
+    print(f"\n三主轴校准判断: {'✓ 轴向覆盖充分' if axis_calibration_ready else '✗ 轴向覆盖不足'}")
     if not axis_calibration_ready:
-        print("Recommendations:")
+        print("建议:")
         if axis_metrics['bilateral_coverage_ratio'] < 0.67:
-            print(f"  - Need more bilateral axis data ({axis_metrics['bilateral_axes_count']}/3 < 2/3)")
+            print(f"  - 需要更多轴向双向数据 ({axis_metrics['bilateral_axes_count']}/3 < 2/3)")
         if axis_metrics['quality_score'] < 0.6:
-            print(f"  - Improve data quality and uniformity (score: {axis_metrics['quality_score']:.3f} < 0.6)")
+            print(f"  - 提高数据质量和均匀性 (评分: {axis_metrics['quality_score']:.3f} < 0.6)")
         if axis_metrics['total_axis_points'] < 60:
-            print(f"  - Increase axis data points ({axis_metrics['total_axis_points']} < 60)")
+            print(f"  - 增加轴向数据点数 ({axis_metrics['total_axis_points']} < 60)")
     
     return axis_calibration_ready
 
 def visualize_data_normalization(data, title_prefix="Data", save_path=None):
-    """Visualize comparison before and after data normalization
+    """可视化数据归一化前后的对比
     
     Parameters:
-        data: numpy array, magnetometer data with shape (n, 3)
-        title_prefix: Chart title prefix
-        save_path: Save path, if None then don't save
+        data: numpy数组，形状为(n, 3)的磁力计数据
+        title_prefix: 图表标题前缀
+        save_path: 保存路径，如果为None则不保存
     """
     import matplotlib.pyplot as plt
     
-    # Calculate normalized data
+    # 计算归一化数据
     norms = np.linalg.norm(data, axis=1)
     normalized_data = data / norms[:, np.newaxis]
     
-    # Create charts
+    # 创建图表
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     fig.suptitle(f'{title_prefix} - Before/After Normalization Comparison', fontsize=16)
     
-    # Three projection planes of original data
+    # 原始数据的三个投影平面
     views = [('X', 'Y', 0, 1), ('X', 'Z', 0, 2), ('Y', 'Z', 1, 2)]
     
     for i, (xlabel, ylabel, x_idx, y_idx) in enumerate(views):
-        # Original data
+        # 原始数据
         ax1 = axes[0, i]
         ax1.scatter(data[:, x_idx], data[:, y_idx], s=2, alpha=0.6, c='blue')
         ax1.set_title(f'Original Data - {xlabel}{ylabel} Plane')
@@ -458,7 +458,7 @@ def visualize_data_normalization(data, title_prefix="Data", save_path=None):
         ax1.grid(True, alpha=0.3)
         ax1.axis('equal')
         
-        # Normalized data
+        # 归一化数据
         ax2 = axes[1, i]
         ax2.scatter(normalized_data[:, x_idx], normalized_data[:, y_idx], s=2, alpha=0.6, c='red')
         ax2.set_title(f'Normalized Data - {xlabel}{ylabel} Plane')
@@ -467,14 +467,14 @@ def visualize_data_normalization(data, title_prefix="Data", save_path=None):
         ax2.grid(True, alpha=0.3)
         ax2.axis('equal')
         
-        # Draw unit circle on normalized data
+        # 在归一化数据上绘制单位圆
         theta = np.linspace(0, 2*np.pi, 100)
         ax2.plot(np.cos(theta), np.sin(theta), 'k--', linewidth=1, alpha=0.7, label='Unit Circle')
         ax2.legend()
         ax2.set_xlim(-1.2, 1.2)
         ax2.set_ylim(-1.2, 1.2)
     
-    # Add statistical information
+    # 添加统计信息
     stats_text = f"""Data Statistics:
 Original Data Range: X[{data[:,0].min():.1f}, {data[:,0].max():.1f}], Y[{data[:,1].min():.1f}, {data[:,1].max():.1f}], Z[{data[:,2].min():.1f}, {data[:,2].max():.1f}]
 Original Data Average Radius: {norms.mean():.1f}
