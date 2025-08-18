@@ -114,8 +114,10 @@ def main():
                        help='训练样本数量 (默认: 200)')
     parser.add_argument('-t', '--target_field', type=float, default=500.0,
                        help='目标磁场强度 (默认: 500.0)')
-    parser.add_argument('-s', '--skip_samples', type=int, default=100,
-                       help='丢弃前后样本数量 (默认: 100)')
+    parser.add_argument('-s', '--start_offset', type=int, default=100,
+                       help='样本起始偏移 (默认: 100, 可为负数)')
+    parser.add_argument('-e', '--end_offset', type=int, default=-100,
+                       help='样本结束偏移 (默认: -100, 可为负数)')
     
     args = parser.parse_args()
     
@@ -123,18 +125,20 @@ def main():
     print(f"CSV文件: {args.file}")
     print(f"训练样本数量: {args.train_samples}")
     print(f"目标磁场强度: {args.target_field}")
-    print(f"丢弃前后样本数量: {args.skip_samples}")
+    print(f"样本起始偏移: {args.start_offset}")
+    print(f"样本结束偏移: {args.end_offset}")
     
     # 读取数据
     df = pd.read_csv(args.file)
-    if args.skip_samples > 0:
-        df = df[args.skip_samples:-args.skip_samples]
+    # 使用Python切片语法处理起始和结束偏移
+    if args.end_offset == 0:
+        df = df[args.start_offset:]
+    else:
+        df = df[args.start_offset:args.end_offset]
     data = df[['X', 'Y', 'Z']].values
     total_samples = len(data)
     
-    print(f"从 {args.file} 读取了 {len(pd.read_csv(args.file))} 个样本")
-    if args.skip_samples > 0:
-        print(f"丢弃前后各 {args.skip_samples} 个样本，剩余 {total_samples} 个有效样本")
+    print(f"从 {args.file} 读取了 {total_samples} 个样本 (起始偏移: {args.start_offset}, 结束偏移: {args.end_offset})")
     
     # 验证训练样本数量
     if args.train_samples > total_samples:
