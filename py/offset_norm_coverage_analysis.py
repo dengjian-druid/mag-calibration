@@ -53,7 +53,7 @@ def calculate_projection_radius(data, plane_indices):
     
     return radius
 
-def analyze_sector_coverage(data, plane_indices, num_sectors=8, min_radius_threshold=0.3):
+def analyze_sector_coverage(data, plane_indices, num_sectors=8, min_radius=0.3):
     """
     分析指定投影平面的扇面覆盖情况
     
@@ -61,31 +61,41 @@ def analyze_sector_coverage(data, plane_indices, num_sectors=8, min_radius_thres
         data: 归一化后的数据
         plane_indices: 投影平面的轴索引，如(0,1)表示XY平面
         num_sectors: 扇面数量，默认8个
-        min_radius_threshold: 最小有效半径阈值
+        min_radius: 最小有效半径，小于此值的点将被忽略
     
     Returns:
         coverage_info: 包含覆盖信息的字典
     """
     projection = data[:, plane_indices]
     
-    # 计算投影半径
-    radius = calculate_projection_radius(data, plane_indices)
+    # 计算每个点到原点的距离
+    distances = np.linalg.norm(projection, axis=1)
     
-    # 检查半径是否足够大
-    if radius < min_radius_threshold:
+    # 过滤掉半径太小的点
+    valid_mask = distances >= min_radius
+    valid_projection = projection[valid_mask]
+    valid_distances = distances[valid_mask]
+    
+    # 计算整体投影半径（用于显示）
+    overall_radius = calculate_projection_radius(data, plane_indices)
+    
+    # 如果没有有效点，返回空覆盖
+    if len(valid_projection) == 0:
         return {
             'plane_name': f'{"XYZ"[plane_indices[0]]}{"XYZ"[plane_indices[1]]}',
-            'radius': radius,
-            'valid': False,
-            'reason': f'Projection radius {radius:.3f} < threshold {min_radius_threshold}',
+            'radius': overall_radius,
+            'valid': True,  # 平面本身是有效的，只是没有足够大的点
             'covered_sectors': 0,
             'total_sectors': num_sectors,
             'coverage_ratio': 0.0,
-            'sector_counts': [0] * num_sectors
+            'sector_counts': [0] * num_sectors,
+            'valid_points': 0,
+            'total_points': len(projection),
+            'filtered_points': len(projection)
         }
     
-    # 计算每个点的角度
-    angles = np.arctan2(projection[:, 1], projection[:, 0])
+    # 计算每个有效点的角度
+    angles = np.arctan2(valid_projection[:, 1], valid_projection[:, 0])
     # 将角度转换到[0, 2π]范围
     angles = (angles + 2 * np.pi) % (2 * np.pi)
     
@@ -106,24 +116,29 @@ def analyze_sector_coverage(data, plane_indices, num_sectors=8, min_radius_thres
     
     return {
         'plane_name': f'{"XYZ"[plane_indices[0]]}{"XYZ"[plane_indices[1]]}',
-        'radius': radius,
+        'radius': overall_radius,
         'valid': True,
         'covered_sectors': covered_sectors,
         'total_sectors': num_sectors,
         'coverage_ratio': coverage_ratio,
         'sector_counts': sector_counts,
         'angles': angles,
-        'projection': projection
+        'projection': valid_projection,
+        'filtered_projection': projection[~valid_mask],
+        'valid_points': len(valid_projection),
+        'total_points': len(projection),
+        'filtered_points': len(projection) - len(valid_projection),
+        'min_radius': min_radius
     }
 
-def comprehensive_coverage_analysis(data, num_sectors=8, min_radius_threshold=0.3):
+def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3):
     """
     对三个投影平面进行全面的覆盖范围分析
     
     Parameters:
         data: 原始磁力计数据
         num_sectors: 扇面数量
-        min_radius_threshold: 最小有效半径阈值
+        min_radius: 最小有效半径，小于此值的点将被忽略
     
     Returns:
         analysis_results: 分析结果字典
@@ -149,20 +164,21 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius_threshold=0.
     print(f"\nOriginal data points: {len(data)}")
     print(f"Calculated offset: [{offset[0]:.3f}, {offset[1]:.3f}, {offset[2]:.3f}]")
     print(f"Sector division: {num_sectors} sectors per plane")
-    print(f"Minimum radius threshold: {min_radius_threshold}")
+    print(f"Minimum radius filter: {min_radius} (points below this radius will be ignored)")
     
     print("\n" + "="*50)
     print("Projection Plane Analysis")
     print("="*50)
     
     for plane_idx, (i, j, name) in enumerate(planes):
-        result = analyze_sector_coverage(normalized_data, (i, j), num_sectors, min_radius_threshold)
+        result = analyze_sector_coverage(normalized_data, (i, j), num_sectors, min_radius)
         plane_results[name] = result
         
         print(f"\n【{name} Plane】")
         print(f"  Projection radius: {result['radius']:.3f}")
+        print(f"  Valid points: {result['valid_points']}/{result['total_points']} (filtered: {result['filtered_points']})")
         
-        if result['valid']:
+        if result['valid_points'] > 0:
             print(f"  ✅ Valid projection")
             print(f"  Covered sectors: {result['covered_sectors']}/{result['total_sectors']}")
             print(f"  Coverage ratio: {result['coverage_ratio']:.1%}")
@@ -178,7 +194,7 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius_threshold=0.
             valid_planes.append(name)
             total_coverage_score += result['coverage_ratio']
         else:
-            print(f"  ❌ Invalid projection: {result['reason']}")
+            print(f"  ❌ No valid points (all points have radius < {min_radius})")
     
     # 计算综合覆盖评分
     if valid_planes:
@@ -221,7 +237,7 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius_threshold=0.
         'average_coverage': average_coverage,
         'coverage_quality': coverage_quality,
         'num_sectors': num_sectors,
-        'min_radius_threshold': min_radius_threshold
+        'min_radius': min_radius
     }
 
 def visualize_coverage_analysis(analysis_results, save_path=None):
@@ -313,14 +329,30 @@ def visualize_coverage_analysis(analysis_results, save_path=None):
                 ax.text(text_x, text_y, str(sector_idx + 1), 
                        ha='center', va='center', fontsize=10, fontweight='bold')
             
-            # 绘制归一化后的数据投影点
+            # 绘制归一化后的有效数据投影点
             ax.scatter(projection[:, 0], projection[:, 1], 
-                      c=colors[idx], alpha=0.6, s=8, 
-                      label=f'Normalized Data ({len(projection)} points)')
+                      c=colors[idx], alpha=0.7, s=12, 
+                      label=f'Valid Data ({len(projection)} points)', zorder=3)
+            
+            # 绘制被过滤的点（如果有的话）
+            if 'filtered_projection' in result and len(result['filtered_projection']) > 0:
+                filtered_proj = result['filtered_projection']
+                ax.scatter(filtered_proj[:, 0], filtered_proj[:, 1], 
+                          c='gray', alpha=0.4, s=8, marker='x',
+                          label=f'Filtered Data ({len(filtered_proj)} points)', zorder=2)
+            
+            # 绘制过滤圆圈
+            if 'min_radius' in result:
+                filter_circle = plt.Circle((0, 0), result['min_radius'], 
+                                         fill=False, color='red', 
+                                         linestyle=':', linewidth=2, alpha=0.8, 
+                                         label=f'Min radius ({result["min_radius"]:.1f})', zorder=1)
+                ax.add_patch(filter_circle)
             
             # 绘制单位圆
             circle = plt.Circle((0, 0), 1, fill=False, color='black', 
-                               linestyle='--', linewidth=2, alpha=0.7, label='Unit sphere projection')
+                               linestyle='--', linewidth=2, alpha=0.7, 
+                               label='Unit sphere projection', zorder=1)
             ax.add_patch(circle)
             
             # 设置标题和标签

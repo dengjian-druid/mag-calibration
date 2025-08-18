@@ -14,7 +14,7 @@ import argparse
 from sklearn.model_selection import train_test_split
 from offset_norm_coverage_analysis import comprehensive_coverage_analysis, visualize_coverage_analysis
 
-def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_threshold=0.3, show_details=True, 
+def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius=0.3, show_details=True, 
                  start_row=None, end_row=None, train_size=None):
     """
     快速分析磁力计数据覆盖范围
@@ -23,8 +23,11 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_thresho
         file_path: 数据文件路径
         mag_columns: 磁力计数据列名或索引，如['mag_x', 'mag_y', 'mag_z']或[0,1,2]
         num_sectors: 扇面数量 (默认8)
-        min_radius_threshold: 最小半径阈值 (默认0.3)
+        min_radius: 最小半径阈值 (默认0.3)
         show_details: 是否显示详细信息 (默认True)
+        start_row: 数据起始行
+        end_row: 数据结束行
+        train_size: 训练集大小
     
     Returns:
         analysis_results: 分析结果字典
@@ -99,6 +102,8 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_thresho
         if len(data) == 0:
             raise ValueError("No valid data points found")
         
+
+        
         # 数据截取
         if start_row is not None or end_row is not None:
             start_idx = start_row if start_row is not None else 0
@@ -140,7 +145,7 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_thresho
         return None
     
     # 2. 进行覆盖分析
-    print(f"\n🎯 Coverage Analysis (sectors={num_sectors}, threshold={min_radius_threshold})")
+    print(f"\n🎯 Coverage Analysis (sectors={num_sectors}, min_radius={min_radius})")
     print("-" * 60)
     
     def analyze_dataset(dataset, dataset_name):
@@ -151,7 +156,7 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_thresho
         results = comprehensive_coverage_analysis(
             dataset, 
             num_sectors=num_sectors,
-            min_radius_threshold=min_radius_threshold
+            min_radius=min_radius
         )
         
         # 显示关键结果
@@ -171,7 +176,7 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius_thresho
                     covered_sectors = plane_data['covered_sectors']
                     print(f"     {plane_name}: ✅ R={radius:.3f}, Coverage={coverage:.1%} ({covered_sectors}/{num_sectors} sectors)")
                 else:
-                    print(f"     {plane_name}: ❌ R={radius:.3f} < {min_radius_threshold} (invalid)")
+                    print(f"     {plane_name}: ❌ R={radius:.3f} < {min_radius} (invalid)")
         
         return results
     
@@ -250,7 +255,7 @@ def main():
         epilog="""
 Examples:
   python quick_coverage_analysis.py data.csv
-  python quick_coverage_analysis.py data.csv --sectors 12 --threshold 0.2
+  python quick_coverage_analysis.py data.csv --sectors 12 --min-radius 0.2
   python quick_coverage_analysis.py data.csv --columns mx,my,mz
   python quick_coverage_analysis.py data.csv -s 100 -e 1000 -n 500
   python quick_coverage_analysis.py -f data.csv -s 0 -e 2000 -n 800 --quiet
@@ -268,7 +273,7 @@ Examples:
     
     # 原有参数
     parser.add_argument('--sectors', type=int, default=8, help='Number of sectors (default: 8)')
-    parser.add_argument('--threshold', type=float, default=0.3, help='Minimum radius threshold (default: 0.3)')
+    parser.add_argument('--min-radius', type=float, default=0.3, help='Minimum radius for valid points (default: 0.3)')
     parser.add_argument('--columns', help='Magnetometer column names or indices (comma-separated)')
     parser.add_argument('--quiet', action='store_true', help='Show only summary results')
     
@@ -306,7 +311,7 @@ Examples:
         file_path=file_path,
         mag_columns=mag_columns,
         num_sectors=args.sectors,
-        min_radius_threshold=args.threshold,
+        min_radius=args.min_radius,
         show_details=not args.quiet,
         start_row=args.start,
         end_row=args.end,
