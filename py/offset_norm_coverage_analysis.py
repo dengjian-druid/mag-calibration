@@ -131,7 +131,7 @@ def analyze_sector_coverage(data, plane_indices, num_sectors=8, min_radius=0.3):
         'min_radius': min_radius
     }
 
-def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3):
+def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3, local_field_strength=None):
     """
     对三个投影平面进行全面的覆盖范围分析
     
@@ -139,10 +139,57 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3):
         data: 原始磁力计数据
         num_sectors: 扇面数量
         min_radius: 最小有效半径，小于此值的点将被忽略
+        local_field_strength: 本地磁场强度，如果为None则自动估算
     
     Returns:
         analysis_results: 分析结果字典
     """
+    # 估算本地磁场强度（如果未提供）
+    if local_field_strength is None:
+        norms = np.linalg.norm(data, axis=1)
+        local_field_strength = np.mean(norms)
+    
+    # 计算运动阈值
+    motion_threshold = min_radius * local_field_strength
+    
+    # 在归一化前检测三轴的变化范围
+    axis_ranges = [
+        np.max(data[:, 0]) - np.min(data[:, 0]),  # X轴范围
+        np.max(data[:, 1]) - np.min(data[:, 1]),  # Y轴范围
+        np.max(data[:, 2]) - np.min(data[:, 2])   # Z轴范围
+    ]
+    max_range = max(axis_ranges)
+    
+    # 如果最大范围的一半都小于阈值，判断为运动不足（相当于投影半径）
+    if max_range / 2 < motion_threshold:
+        print("=" * 70)
+        print("Offset-Norm Normalization Coverage Analysis")
+        print("=" * 70)
+        print(f"\n❌ Insufficient motion detected!")
+        print(f"Local field strength: {local_field_strength:.1f}")
+        print(f"Motion threshold: {motion_threshold:.1f}")
+        print(f"Axis ranges: X={axis_ranges[0]:.1f}, Y={axis_ranges[1]:.1f}, Z={axis_ranges[2]:.1f}")
+        print(f"Maximum range/2 (projection radius): {max_range/2:.1f} < {motion_threshold:.1f}")
+        print(f"\n💡 Recommendation: Move the device more to collect sufficient data")
+        
+        # 返回零覆盖率结果
+        return {
+            'original_data': data,
+            'normalized_data': None,
+            'offset': None,
+            'plane_results': {},
+            'valid_planes': [],
+            'average_coverage': 0.0,
+            'coverage_quality': 'Insufficient motion',
+            'num_sectors': num_sectors,
+            'min_radius': min_radius,
+            'local_field_strength': local_field_strength,
+            'motion_threshold': motion_threshold,
+            'axis_ranges': axis_ranges,
+            'max_range': max_range,
+            'motion_sufficient': False
+        }
+    
     # 进行Offset-Norm归一化
     normalized_data, offset = offset_norm_normalize(data)
     
@@ -162,6 +209,10 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3):
     print("=" * 70)
     
     print(f"\nOriginal data points: {len(data)}")
+    print(f"Local field strength: {local_field_strength:.1f}")
+    print(f"Motion threshold: {motion_threshold:.1f}")
+    print(f"Axis ranges: X={axis_ranges[0]:.1f}, Y={axis_ranges[1]:.1f}, Z={axis_ranges[2]:.1f}")
+    print(f"Maximum range: {max_range:.1f} ✅ (sufficient motion)")
     print(f"Calculated offset: [{offset[0]:.3f}, {offset[1]:.3f}, {offset[2]:.3f}]")
     print(f"Sector division: {num_sectors} sectors per plane")
     print(f"Minimum radius filter: {min_radius} (points below this radius will be ignored)")
@@ -237,7 +288,12 @@ def comprehensive_coverage_analysis(data, num_sectors=8, min_radius=0.3):
         'average_coverage': average_coverage,
         'coverage_quality': coverage_quality,
         'num_sectors': num_sectors,
-        'min_radius': min_radius
+        'min_radius': min_radius,
+        'local_field_strength': local_field_strength,
+        'motion_threshold': motion_threshold,
+        'axis_ranges': axis_ranges,
+        'max_range': max_range,
+        'motion_sufficient': True
     }
 
 def visualize_coverage_analysis(analysis_results, save_path=None):

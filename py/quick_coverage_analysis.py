@@ -15,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from offset_norm_coverage_analysis import comprehensive_coverage_analysis, visualize_coverage_analysis
 
 def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius=0.3, show_details=True, 
-                 start_row=None, end_row=None, train_size=None):
+                 start_row=None, end_row=None, train_size=None, local_field_strength=500):
     """
     快速分析磁力计数据覆盖范围
     
@@ -28,6 +28,7 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius=0.3, sh
         start_row: 数据起始行
         end_row: 数据结束行
         train_size: 训练集大小
+        local_field_strength: 本地磁场强度，单位mGauss (默认500)
     
     Returns:
         analysis_results: 分析结果字典
@@ -156,7 +157,8 @@ def quick_analyze(file_path, mag_columns=None, num_sectors=8, min_radius=0.3, sh
         results = comprehensive_coverage_analysis(
             dataset, 
             num_sectors=num_sectors,
-            min_radius=min_radius
+            min_radius=min_radius,
+            local_field_strength=local_field_strength
         )
         
         # 显示关键结果
@@ -274,6 +276,7 @@ Examples:
     # 原有参数
     parser.add_argument('--sectors', type=int, default=8, help='Number of sectors (default: 8)')
     parser.add_argument('--min-radius', type=float, default=0.3, help='Minimum radius for valid points (default: 0.3)')
+    parser.add_argument('--mag-field', type=float, default=500, help='Local magnetic field strength in mGauss (default: 500)')
     parser.add_argument('--columns', help='Magnetometer column names or indices (comma-separated)')
     parser.add_argument('--quiet', action='store_true', help='Show only summary results')
     
@@ -315,7 +318,8 @@ Examples:
         show_details=not args.quiet,
         start_row=args.start,
         end_row=args.end,
-        train_size=args.train_size
+        train_size=args.train_size,
+        local_field_strength=args.mag_field
     )
     
     if result:
